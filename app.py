@@ -2,7 +2,7 @@
 
 실행: streamlit run app.py
 - 건별 과정: 원문 → AI 정리 → 규칙 판정 → 대장 한 줄
-- 하자대장: data/하자대장.csv 보기, 전체 처리(AI 호출) 후 저장
+- 하자대장: 하자대장 테이블(DB) 보기, 전체 처리(AI 호출) 후 저장
 - 기준 문서: 지침·업무설명 보기
 
 원본(접수함, 공사정보)은 고치지 않는다. AI는 버튼을 눌렀을 때만 부른다.
@@ -15,12 +15,12 @@ import pandas as pd
 import streamlit as st
 
 import ai
+import db
 import rules
 import run
 
 ROOT = Path(__file__).resolve().parent
 접수함 = ROOT / "data" / "접수함"
-대장_경로 = ROOT / "data" / "하자대장.csv"
 지침_경로 = ROOT / "지침" / "접수정리.md"
 업무설명_경로 = ROOT / "data" / "업무설명_하자보수.md"
 
@@ -33,7 +33,7 @@ st.caption("실습용 가상 업무 · 접수 원문이 하자대장이 되기�
     ("① 접수 읽기", "코드", "접수함의 txt 원문을 읽는다"),
     ("② 내용 정리", "AI", "날짜·위치·공종·하자내용·긴급도를 뽑는다"),
     ("③ 규칙 판정", "코드", "접수번호·조치기한·공사 매칭·보증 판정"),
-    ("④ 대장 기록", "코드", "16개 항목을 하자대장.csv에 적는다"),
+    ("④ 대장 기록", "코드", "16개 항목을 하자대장 테이블에 적는다"),
     ("⑤ 확인·승인", "사람", "확인필요 건을 정하고 조치요청으로 넘긴다"),
 ]
 for col, (이름, 담당, 설명) in zip(st.columns(len(흐름)), 흐름):
@@ -46,9 +46,13 @@ for col, (이름, 담당, 설명) in zip(st.columns(len(흐름)), 흐름):
 
 # ---- 읽기 도우미 -----------------------------------------------------------
 def 대장_읽기() -> pd.DataFrame | None:
-    if not 대장_경로.exists():
+    """하자대장 테이블(DB)을 읽는다. 비어 있거나 연결에 실패하면 None."""
+    try:
+        행들 = db.대장_읽기()
+    except Exception as e:  # 연결 정보는 화면에 내지 않는다
+        st.error(f"하자대장을 DB에서 읽지 못했습니다: {type(e).__name__}")
         return None
-    return pd.read_csv(대장_경로, dtype=str, encoding="utf-8-sig").fillna("")
+    return pd.DataFrame(행들, columns=db.대장_항목) if 행들 else None
 
 
 def 원문_파일들() -> list[Path]:
@@ -151,10 +155,9 @@ with tab_건별:
 with tab_대장:
     대장 = 대장_읽기()
     if 대장 is None:
-        st.info("하자대장.csv가 아직 없습니다. 아래 버튼으로 만들 수 있습니다.")
+        st.info("하자대장 테이블이 비어 있습니다. 아래 버튼으로 만들 수 있습니다.")
     else:
-        수정시각 = datetime.fromtimestamp(대장_경로.stat().st_mtime)
-        st.caption(f"{대장_경로.name} · 마지막 저장 {수정시각:%Y-%m-%d %H:%M}")
+        st.caption("하자대장 테이블 (DB)")
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("전체", len(대장))
         m2.metric("긴급", int((대장["긴급도"] == "긴급").sum()))
@@ -166,12 +169,12 @@ with tab_대장:
         st.dataframe(대장[대장["상태"].isin(상태들)], hide_index=True, width="stretch")
 
     st.divider()
-    st.markdown("**전체 처리** — 접수함의 모든 원문을 AI로 정리하고 규칙을 적용해 하자대장.csv를 **다시 만듭니다.**")
-    st.caption("AI를 건수만큼 호출합니다. 기존 하자대장.csv는 덮어씁니다.")
+    st.markdown("**전체 처리** — 접수함의 모든 원문을 AI로 정리하고 규칙을 적용해 하자대장 테이블에 **저장합니다.**")
+    st.caption("AI를 건수만큼 호출합니다. 접수번호가 같은 행은 갈아 쓰고, 없는 행은 추가합니다.")
     if st.button("전체 처리 후 저장", type="primary"):
         with st.spinner("접수함을 처리하는 중..."):
             try:
-                행들 = run.처리(접수함, 대장_경로)
+                행들 = run.처리(접수함)
                 st.success(f"{len(행들)}건을 저장했습니다.")
                 st.rerun()
             except Exception as e:

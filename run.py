@@ -1,30 +1,22 @@
-"""입력 폴더의 접수 원문을 일괄 처리해 하자대장 CSV로 저장한다.
+"""입력 폴더의 접수 원문을 일괄 처리해 하자대장 테이블(DB)에 저장한다.
 
-사용: python run.py [입력폴더] [출력파일]
-기본: data/접수함  →  data/하자대장.csv
+사용: python run.py [입력폴더]
+기본: data/접수함
 
-AI 정리(ai.py) → 번호·기한·보증 판정(rules.py) → 대장 16개 항목으로 기록.
+AI 정리(ai.py) → 번호·기한·보증 판정(rules.py) → 대장 16개 항목으로 기록(db.py).
 원본(접수함, 공사정보)은 고치지 않는다.
 """
-import csv
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 import ai
+import db
 import rules
 
 ROOT = Path(__file__).resolve().parent
 기본_입력 = ROOT / "data" / "접수함"
-기본_출력 = ROOT / "data" / "하자대장.csv"
-
-# 업무설명 2. 하자대장에 적는 항목 (이 순서)
-대장_항목 = [
-    "접수번호", "접수일", "원문파일", "위치", "공종", "하자내용", "긴급도",
-    "조치기한", "공사번호", "시공업체", "준공일", "보증만료일", "보증판정",
-    "책임구분", "상태", "비고",
-]
 
 
 def _파일명_날짜(이름: str):
@@ -63,7 +55,7 @@ def 행_만들기(파일명: str, 정리: dict, 접수일: str, 순번: int, 공
     return 행, 판정
 
 
-def 처리(입력폴더: Path, 출력파일: Path) -> list[dict]:
+def 처리(입력폴더: Path) -> list[dict]:
     파일들 = sorted(입력폴더.glob("*.txt"))
     if not 파일들:
         raise SystemExit(f"접수 원문이 없습니다: {입력폴더}")
@@ -85,18 +77,13 @@ def 처리(입력폴더: Path, 출력파일: Path) -> list[dict]:
         행들.append(행)
         print(f"  {행['접수번호']}  {파일.name}  →  {행['보증판정']}")
 
-    # 엑셀에서 한글이 깨지지 않도록 utf-8-sig
-    출력파일.parent.mkdir(parents=True, exist_ok=True)
-    with open(출력파일, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=대장_항목)
-        w.writeheader()
-        w.writerows(행들)
+    # 저장은 db.py에서만 한다. 접수번호가 같으면 갈아 쓴다.
+    db.대장_저장(행들)
     return 행들
 
 
 if __name__ == "__main__":
     입력 = Path(sys.argv[1]) if len(sys.argv) > 1 else 기본_입력
-    출력 = Path(sys.argv[2]) if len(sys.argv) > 2 else 기본_출력
     print(f"처리 시작: {입력}")
-    행들 = 처리(입력, 출력)
-    print(f"{len(행들)}건 저장: {출력}")
+    행들 = 처리(입력)
+    print(f"{len(행들)}건 하자대장 테이블에 저장")
