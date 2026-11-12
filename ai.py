@@ -53,7 +53,11 @@ def _model() -> str:
 def 접수정리(원문파일: str | Path) -> dict:
     """접수 원문 txt 1건을 읽어 지침/접수정리.md대로 정리한 dict를 돌려준다."""
     원문파일 = Path(원문파일)
-    원문 = 원문파일.read_text(encoding="utf-8")
+    return 접수정리_글(원문파일.read_text(encoding="utf-8"), 원문파일.name)
+
+
+def 접수정리_글(원문: str, 이름: str) -> dict:
+    """원문 글(txt가 아니어도 됨)을 지침/접수정리.md대로 정리한다. 이름은 '원문파일' 칸에 들어간다."""
     지침 = 접수정리_지침.read_text(encoding="utf-8")
 
     response = _client().messages.create(
@@ -66,7 +70,7 @@ def 접수정리(원문파일: str | Path) -> dict:
         },
         messages=[{
             "role": "user",
-            "content": f"원문파일: {원문파일.name}\n\n--- 접수 원문 ---\n{원문}",
+            "content": f"원문파일: {이름}\n\n--- 접수 원문 ---\n{원문}",
         }],
     )
 

@@ -52,10 +52,18 @@ _meta = MetaData()
 )
 
 _엔진 = None
+_초기화됨 = False
 
 
 def _접속_주소() -> str:
     주소 = os.getenv("DATABASE_URL", "").strip()
+    if not 주소:
+        # 웹 배포(intake.py)에서는 .env가 없고 Streamlit Secrets에 둔다.
+        try:
+            import streamlit as st
+            주소 = str(st.secrets["DATABASE_URL"]).strip()
+        except Exception:
+            주소 = ""
     if not 주소:
         raise RuntimeError(".env에 DATABASE_URL이 없습니다.")
     if "YOUR-PASSWORD" in 주소:
@@ -75,11 +83,49 @@ def 엔진():
 
 
 def 초기화() -> None:
-    """테이블이 없으면 만들고, 두 테이블 모두 RLS를 켠다. 여러 번 불러도 안전하다."""
+    """테이블이 없으면 만들고, 두 테이블 모두 RLS를 켠다. 여러 번 불러도 안전하다.
+    프로세스당 한 번만 실행한다."""
+    global _초기화됨
+    if _초기화됨:
+        return
     _meta.create_all(엔진())
     with 엔진().begin() as conn:
         for 이름 in ("접수", "하자대장"):
             conn.execute(text(f'ALTER TABLE "{이름}" ENABLE ROW LEVEL SECURITY'))
+    _초기화됨 = True
+
+
+def 접수_저장(접수자: str, 부서: str, 발견일, 위치: str, 내용: str) -> int:
+    """접수 1건을 저장하고 id를 돌려준다. 처리상태는 미처리, 접수일시는 DB가 채운다."""
+    초기화()
+    with 엔진().begin() as conn:
+        return conn.execute(
+            접수_테이블.insert()
+            .values(접수자=접수자, 부서=부서, 발견일=발견일, 위치=위치, 내용=내용)
+            .returning(접수_테이블.c.id)
+        ).scalar_one()
+
+
+def 접수_읽기(처리상태: str | None = None) -> list[dict]:
+    """접수를 id 순으로. 처리상태를 주면 그 상태만. 값은 문자열, 비어 있으면 ''."""
+    초기화()
+    조회 = select(접수_테이블).order_by(접수_테이블.c.id)
+    if 처리상태:
+        조회 = 조회.where(접수_테이블.c.처리상태 == 처리상태)
+    with 엔진().connect() as conn:
+        행들 = conn.execute(조회).mappings().all()
+    return [{k: ("" if v is None else str(v)) for k, v in 행.items()} for 행 in 행들]
+
+
+def 접수_처리완료(접수_id: int, 접수번호: str) -> None:
+    """대장에 옮긴 접수의 처리상태를 처리완료로 바꾸고 접수번호를 적는다."""
+    초기화()
+    with 엔진().begin() as conn:
+        conn.execute(
+            접수_테이블.update()
+            .where(접수_테이블.c.id == 접수_id)
+            .values(처리상태="처리완료", 접수번호=접수번호)
+        )
 
 
 def 대장_읽기() -> list[dict]:

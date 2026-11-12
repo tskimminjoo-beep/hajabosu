@@ -169,8 +169,20 @@ with tab_대장:
         st.dataframe(대장[대장["상태"].isin(상태들)], hide_index=True, width="stretch")
 
     st.divider()
-    st.markdown("**전체 처리** — 접수함의 모든 원문을 AI로 정리하고 규칙을 적용해 하자대장 테이블에 **저장합니다.**")
-    st.caption("AI를 건수만큼 호출합니다. 접수번호가 같은 행은 갈아 쓰고, 없는 행은 추가합니다.")
+    st.markdown("**접수 화면(intake.py)으로 들어온 접수**")
+    try:
+        접수들 = db.접수_읽기()
+    except Exception as e:
+        접수들 = []
+        st.error(f"접수를 DB에서 읽지 못했습니다: {type(e).__name__}")
+    미처리 = sum(1 for x in 접수들 if x["처리상태"] == "미처리")
+    st.caption(f"전체 {len(접수들)}건 · 미처리 {미처리}건 (전체 처리를 하면 미처리 접수가 하자대장으로 넘어갑니다)")
+    if 접수들:
+        st.dataframe(pd.DataFrame(접수들), hide_index=True, width="stretch")
+
+    st.divider()
+    st.markdown("**전체 처리** — 접수함의 모든 원문과 DB의 미처리 접수를 AI로 정리하고 규칙을 적용해 하자대장 테이블에 **저장합니다.**")
+    st.caption("AI를 건수만큼 호출합니다. DB 접수는 발견일을 접수일로 씁니다. 접수번호가 같은 행은 갈아 쓰고, 없는 행은 추가합니다.")
     if st.button("전체 처리 후 저장", type="primary"):
         with st.spinner("접수함을 처리하는 중..."):
             try:
